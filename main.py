@@ -1,15 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
-from typing import List, Optional
-import uuid
 from datetime import datetime, timezone
+from typing import List
+import uuid
 
 app = FastAPI()
 
 # --- In-Memory Storage ---
-# We will use a simple list to store booking objects.
-bookings_db = []
+# We will use a dictionary to store bookings by room_id for quicker lookups.
+bookings_db = {}
 
 # --- Data Models ---
 class BookingRequest(BaseModel):
@@ -24,12 +23,10 @@ class Booking(BookingRequest):
 
 def is_overlapping(room_id: str, start: datetime, end: datetime) -> bool:
     """Checks if the requested time slot overlaps with existing bookings for the room."""
-    for booking in bookings_db:
-        if booking.room_id == room_id:
-            # Overlap logic: (StartA <= EndB) and (EndA >= StartB)
-            # Generally: max(start1, start2) < min(end1, end2)
-            if max(start, booking.start_time) < min(end, booking.end_time):
-                return True
+    room_bookings = bookings_db.get(room_id, [])
+    for booking in room_bookings:
+        if max(start, booking.start_time) < min(end, booking.end_time):
+            return True
     return False
 
 # --- Endpoints ---
@@ -60,7 +57,11 @@ def create_booking(booking: BookingRequest):
         end_time=booking.end_time
     )
 
-    bookings_db.append(new_booking)
+    # Store the booking in the dictionary
+    if booking.room_id not in bookings_db:
+        bookings_db[booking.room_id] = []
+    
+    bookings_db[booking.room_id].append(new_booking)
     return new_booking
 
 @app.get("/bookings/{room_id}", response_model=List[Booking])
@@ -68,7 +69,7 @@ def view_bookings(room_id: str):
     """
     List all bookings for a specific room.
     """
-    room_bookings = [b for b in bookings_db if b.room_id == room_id]
+    room_bookings = bookings_db.get(room_id, [])
     return room_bookings
 
 @app.delete("/bookings/{booking_id}")
@@ -76,12 +77,18 @@ def cancel_booking(booking_id: str):
     """
     Remove an existing booking by ID.
     """
-    global bookings_db
-    # Filter out the booking with the matching ID
-    original_count = len(bookings_db)
-    bookings_db = [b for b in bookings_db if b.booking_id != booking_id]
+    found_booking = None
+    for room_bookings in bookings_db.values():
+        for booking in room_bookings:
+            if booking.booking_id == booking_id:
+                found_booking = booking
+                room_bookings.remove(booking)
+                break
+        if found_booking:
+            break
     
-    if len(bookings_db) == original_count:
+    if not found_booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
-        
+    
     return {"message": "Booking canceled successfully."}
+
