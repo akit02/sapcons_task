@@ -86,4 +86,3 @@ def cancel_booking(booking_id: str):
         room_bookings.remove(booking)
 
     return {"message": "Booking canceled successfully."}
-
