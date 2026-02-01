@@ -77,18 +77,13 @@ def cancel_booking(booking_id: str):
     """
     Remove an existing booking by ID.
     """
-    found_booking = None
-    for room_bookings in bookings_db.values():
-        for booking in room_bookings:
-            if booking.booking_id == booking_id:
-                found_booking = booking
-                room_bookings.remove(booking)
-                break
-        if found_booking:
-            break
-    
-    if not found_booking:
+    booking = next((b for b in [booking for room in bookings_db.values() for booking in room] if b.booking_id == booking_id), None)
+    if not booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
     
+    # Remove the booking
+    for room_bookings in bookings_db.values():
+        room_bookings.remove(booking)
+
     return {"message": "Booking canceled successfully."}
 
